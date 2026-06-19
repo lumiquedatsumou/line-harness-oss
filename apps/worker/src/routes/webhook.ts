@@ -1,7 +1,12 @@
 import { Hono } from 'hono';
 import { verifySignature, LineClient } from '@line-crm/line-sdk';
 import type { WebhookRequestBody, WebhookEvent, TextEventMessage } from '@line-crm/line-sdk';
-import { createStickerMessageContent } from '@line-crm/shared';
+import {
+  createStickerMessageContent,
+  maskFriendId,
+  maskLineUserId,
+  redactForLog,
+} from '@line-crm/shared';
 import {
   upsertFriend,
   updateFriendFollowStatus,
@@ -49,7 +54,11 @@ async function ensureFriendFromWebhookUser(
       // A signed webhook already proves this user interacted with the bot.
       // If profile lookup is temporarily unavailable, keep the event processable
       // by creating the friend with the LINE userId and filling profile later.
-      console.error('[webhook] Failed to get profile for unknown user', userId, err);
+      console.error(
+        '[webhook] Failed to get profile for unknown user',
+        maskLineUserId(userId),
+        redactForLog(err),
+      );
     }
 
     friend = await upsertFriend(db, {
@@ -58,7 +67,9 @@ async function ensureFriendFromWebhookUser(
       pictureUrl: profile?.pictureUrl ?? null,
       statusMessage: profile?.statusMessage ?? null,
     });
-    console.log(`[webhook] auto-registered existing friend userId=${userId} friendId=${friend.id}`);
+    console.log(
+      `[webhook] auto-registered existing friend userId=${maskLineUserId(userId)} friendId=${maskFriendId(friend.id)}`,
+    );
   }
 
   if (lineAccountId && friend.line_account_id !== lineAccountId) {
@@ -166,7 +177,7 @@ webhook.post('/webhook', async (c) => {
       try {
         await handleEvent(db, lineClient, event, channelAccessToken, matchedAccountId, c.env.WORKER_URL || new URL(c.req.url).origin, c.env.LIFF_URL, c.env.IMAGES);
       } catch (err) {
-        console.error('Error handling webhook event:', err);
+        console.error('Error handling webhook event:', redactForLog(err));
       }
     }
   })();
@@ -191,17 +202,15 @@ async function handleEvent(
       event.source.type === 'user' ? event.source.userId : undefined;
     if (!userId) return;
 
-    console.log(`[follow] userId=${userId} lineAccountId=${lineAccountId}`);
+    console.log(`[follow] userId=${maskLineUserId(userId)} lineAccountId=${lineAccountId}`);
 
     // プロフィール取得 & 友だち登録/更新
     let profile;
     try {
       profile = await lineClient.getProfile(userId);
     } catch (err) {
-      console.error('Failed to get profile for', userId, err);
+      console.error('Failed to get profile for', maskLineUserId(userId), redactForLog(err));
     }
-
-    console.log(`[follow] profile=${profile?.displayName ?? 'null'}`);
 
     const friend = await upsertFriend(db, {
       lineUserId: userId,
@@ -210,13 +219,17 @@ async function handleEvent(
       statusMessage: profile?.statusMessage ?? null,
     });
 
-    console.log(`[follow] friend.id=${friend.id} friend.line_account_id=${(friend as any).line_account_id}`);
+    console.log(
+      `[follow] friend.id=${maskFriendId(friend.id)} friend.line_account_id=${(friend as any).line_account_id}`,
+    );
 
     // Set line_account_id for multi-account tracking (always update on follow)
     if (lineAccountId) {
       await db.prepare('UPDATE friends SET line_account_id = ?, updated_at = ? WHERE id = ?')
         .bind(lineAccountId, jstNow(), friend.id).run();
-      console.log(`[follow] line_account_id set to ${lineAccountId} for friend ${friend.id}`);
+      console.log(
+        `[follow] line_account_id set to ${lineAccountId} for friend ${maskFriendId(friend.id)}`,
+      );
     }
 
     // Resolve referral link (entry_route) for this friend.
@@ -286,7 +299,9 @@ async function handleEvent(
                 const expandedContent = expandVariables(resolved.messageContent, { ...friend, metadata: resolvedMeta } as Parameters<typeof expandVariables>[1]);
                 const message = buildMessage(resolved.messageType, expandedContent);
                 await lineClient.replyMessage(event.replyToken, [message]);
-                console.log(`Immediate delivery: sent step ${firstStep.id} to ${userId}`);
+                console.log(
+                  `Immediate delivery: sent step ${firstStep.id} to ${maskLineUserId(userId)}`,
+                );
 
                 // Log what was actually delivered (post buildMessage normalization)
                 // so the dashboard chat view mirrors LINE 1:1.
@@ -320,15 +335,26 @@ async function handleEvent(
                   try {
                     await addTagToFriend(db, friend.id, firstStep.on_reach_tag_id);
                   } catch (err) {
-                    console.error(`[scenario] tag attach failed step=${firstStep.id}:`, err);
+                    console.error(
+                      `[scenario] tag attach failed step=${firstStep.id}:`,
+                      redactForLog(err),
+                    );
                   }
                 }
               } catch (err) {
-                console.error('Failed immediate delivery for scenario', scenario.id, err);
+                console.error(
+                  'Failed immediate delivery for scenario',
+                  scenario.id,
+                  redactForLog(err),
+                );
               }
             }
         } catch (err) {
-          console.error('Failed to enroll friend in scenario', scenario.id, err);
+          console.error(
+            'Failed to enroll friend in scenario',
+            scenario.id,
+            redactForLog(err),
+          );
         }
       }
     }
@@ -345,7 +371,7 @@ async function handleEvent(
             console.log(`[follow] referral intro push sent route=${referralRoute.id}`);
           }
         } catch (err) {
-          console.error('[follow] referral intro push failed', err);
+          console.error('[follow] referral intro push failed', redactForLog(err));
         }
       }
 
@@ -355,7 +381,7 @@ async function handleEvent(
           await enrollFriendInScenario(db, friend.id, referralRoute.scenario_id);
           console.log(`[follow] referral scenario enrolled scenario=${referralRoute.scenario_id}`);
         } catch (err) {
-          console.error('[follow] referral scenario enrollment failed', err);
+          console.error('[follow] referral scenario enrollment failed', redactForLog(err));
         }
       }
     }
@@ -413,7 +439,7 @@ async function handleEvent(
         .bind(crypto.randomUUID(), friend.id, postbackData, lineAccountId ?? null, jstNow())
         .run();
     } catch (err) {
-      console.error('Failed to log incoming postback', err);
+      console.error('Failed to log incoming postback', redactForLog(err));
     }
 
     for (const rule of autoReplies.results) {
@@ -446,7 +472,7 @@ async function handleEvent(
             .bind(crypto.randomUUID(), friend.id, replyPayload.messageType, replyPayload.content, lineAccountId ?? null, jstNow())
             .run();
         } catch (err) {
-          console.error('Failed to send postback reply', err);
+          console.error('Failed to send postback reply', redactForLog(err));
         }
         break;
       }
@@ -589,7 +615,7 @@ async function handleEvent(
           return;
         }
       } catch (err) {
-        console.error('Cross-account trigger error:', err);
+        console.error('Cross-account trigger error:', redactForLog(err));
       }
     }
 
@@ -654,7 +680,7 @@ async function handleEvent(
             .bind(outLogId, friend.id, wbAutoReplyPayload.messageType, wbAutoReplyPayload.content, jstNow())
             .run();
         } catch (err) {
-          console.error('Failed to send auto-reply', err);
+          console.error('Failed to send auto-reply', redactForLog(err));
         }
 
         matched = true;
