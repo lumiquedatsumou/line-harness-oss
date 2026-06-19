@@ -11,6 +11,8 @@ dist/
 *.toml.bak
 .env.production
 .env.staging
+.dev.vars
+.dev.vars.*
 apps/web/out/
 apps/worker/dist/
 .worktrees/
