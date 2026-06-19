@@ -12,6 +12,7 @@
 
 import { Hono, type Context } from 'hono';
 import { getLineAccounts } from '@line-crm/db';
+import { redactForLog, sanitizeLogMessage } from '@line-crm/shared';
 import type { Env } from '../index.js';
 import { canTransition, nextStatus, type BookingAction } from '../services/booking-state.js';
 import { computeSlots, getAvailability } from '../services/availability.js';
@@ -99,7 +100,7 @@ async function verifyCallerLineUserId(c: Context<Env>): Promise<string | null> {
     /* decode 失敗は無視: 候補 URL のみで verify を試す */
   }
 
-  console.log('[verifyCallerLineUserId] candidates:', candidates.length, candidates.join(','));
+  console.log('[verifyCallerLineUserId] candidates:', candidates.length);
 
   for (const channelId of candidates) {
     const res = await fetch('https://api.line.me/oauth2/v2.1/verify', {
@@ -113,7 +114,7 @@ async function verifyCallerLineUserId(c: Context<Env>): Promise<string | null> {
     } else {
       const errBody = await res.text().catch(() => '');
       console.log(
-        `[verifyCallerLineUserId] verify fail channel=${channelId} status=${res.status} body=${errBody.slice(0, 200)}`,
+        `[verifyCallerLineUserId] verify fail status=${res.status} body=${sanitizeLogMessage(errBody.slice(0, 200))}`,
       );
     }
   }
@@ -429,7 +430,7 @@ booking.post('/api/liff/booking/requests', async (c) => {
   // Fire-and-forget notification — failures must not roll back the booking.
   c.executionCtx.waitUntil(
     notifyForBooking(c.env.DB, bookingId, 'requested').catch((err) =>
-      console.error('booking notify (requested) failed:', err),
+      console.error('booking notify (requested) failed:', redactForLog(err)),
     ),
   );
 
@@ -986,13 +987,13 @@ booking.patch('/api/booking/admin/requests/:id', async (c) => {
     }
     c.executionCtx.waitUntil(
       notifyForBooking(c.env.DB, id, 'approved').catch((err) =>
-        console.error('booking notify (approved) failed:', err),
+        console.error('booking notify (approved) failed:', redactForLog(err)),
       ),
     );
   } else if (next === 'rejected') {
     c.executionCtx.waitUntil(
       notifyForBooking(c.env.DB, id, 'rejected').catch((err) =>
-        console.error('booking notify (rejected) failed:', err),
+        console.error('booking notify (rejected) failed:', redactForLog(err)),
       ),
     );
   } else if (next === 'cancelled' || next === 'expired') {

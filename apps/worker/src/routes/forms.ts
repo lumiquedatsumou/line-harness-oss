@@ -17,6 +17,7 @@ import type {
   FormSubmission as DbFormSubmission,
   FormUsedByAccount,
 } from '@line-crm/db';
+import { maskFriendId, maskLineUserId, redactForLog } from '@line-crm/shared';
 import type { Env } from '../index.js';
 
 const forms = new Hono<Env>();
@@ -72,7 +73,7 @@ forms.get('/api/forms', async (c) => {
       ),
     });
   } catch (err) {
-    console.error('GET /api/forms error:', err);
+    console.error('GET /api/forms error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -87,7 +88,7 @@ forms.get('/api/forms/:id', async (c) => {
     }
     return c.json({ success: true, data: serializeForm(form) });
   } catch (err) {
-    console.error('GET /api/forms/:id error:', err);
+    console.error('GET /api/forms/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -129,7 +130,7 @@ forms.post('/api/forms', async (c) => {
 
     return c.json({ success: true, data: serializeForm(form) }, 201);
   } catch (err) {
-    console.error('POST /api/forms error:', err);
+    console.error('POST /api/forms error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -176,7 +177,7 @@ forms.put('/api/forms/:id', async (c) => {
 
     return c.json({ success: true, data: serializeForm(updated) });
   } catch (err) {
-    console.error('PUT /api/forms/:id error:', err);
+    console.error('PUT /api/forms/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -192,7 +193,7 @@ forms.delete('/api/forms/:id', async (c) => {
     await deleteForm(c.env.DB, id);
     return c.json({ success: true, data: null });
   } catch (err) {
-    console.error('DELETE /api/forms/:id error:', err);
+    console.error('DELETE /api/forms/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -208,7 +209,7 @@ forms.get('/api/forms/:id/submissions', async (c) => {
     const submissions = await getFormSubmissions(c.env.DB, id);
     return c.json({ success: true, data: submissions.map(serializeSubmission) });
   } catch (err) {
-    console.error('GET /api/forms/:id/submissions error:', err);
+    console.error('GET /api/forms/:id/submissions error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -241,7 +242,7 @@ forms.post('/api/forms/:id/opened', async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    console.error('POST /api/forms/:id/opened error:', err);
+    console.error('POST /api/forms/:id/opened error:', redactForLog(err));
     return c.json({ success: true }); // non-blocking, always succeed
   }
 });
@@ -272,7 +273,7 @@ forms.post('/api/forms/:id/partial', async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    console.error('POST /api/forms/:id/partial error:', err);
+    console.error('POST /api/forms/:id/partial error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -359,7 +360,7 @@ forms.post('/api/forms/:id/submit', async (c) => {
                 .bind(crypto.randomUUID(), friend.id, form.on_submit_webhook_fail_message, jstNow())
                 .run();
             } catch (e) {
-              console.error('Failed to send webhook fail message:', e);
+              console.error('Failed to send webhook fail message:', redactForLog(e));
             }
           }
         }
@@ -501,10 +502,10 @@ forms.post('/api/forms/:id/submit', async (c) => {
       // Send confirmation message with submitted data back to user
       sideEffects.push(
         (async () => {
-          console.log('Form reply: starting for friendId', friendId);
+          console.log('Form reply: starting for friendId', maskFriendId(friendId));
           const friend = await getFriendById(db, friendId!);
           if (!friend?.line_user_id) { console.log('Form reply: no line_user_id'); return; }
-          console.log('Form reply: sending to', friend.line_user_id);
+          console.log('Form reply: sending to', maskLineUserId(friend.line_user_id));
           const { LineClient } = await import('@line-crm/line-sdk');
           // Resolve access token from friend's account (multi-account support)
           let accessToken = c.env.LINE_CHANNEL_ACCESS_TOKEN;
@@ -602,14 +603,16 @@ forms.post('/api/forms/:id/submit', async (c) => {
       if (sideEffects.length > 0) {
         const results = await Promise.allSettled(sideEffects);
         for (const r of results) {
-          if (r.status === 'rejected') console.error('Form side-effect failed:', r.reason);
+          if (r.status === 'rejected') {
+            console.error('Form side-effect failed:', redactForLog(r.reason));
+          }
         }
       }
     }
 
     return c.json({ success: true, data: serializeSubmission(submission) }, 201);
   } catch (err) {
-    console.error('POST /api/forms/:id/submit error:', err);
+    console.error('POST /api/forms/:id/submit error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -658,7 +661,7 @@ async function callFormWebhook(
     const eligible = data.eligible ?? (data.data as Record<string, unknown> | undefined)?.eligible ?? data.success;
     return { passed: Boolean(eligible), data };
   } catch (err) {
-    console.error('Form webhook error:', err);
+    console.error('Form webhook error:', redactForLog(err));
     return { passed: false, data: { error: String(err) } };
   }
 }

@@ -19,6 +19,11 @@ import {
   getMessageTemplateById,
   jstNow,
 } from '@line-crm/db';
+import {
+  maskFriendId,
+  redactForLog,
+  sanitizeLogMessage,
+} from '@line-crm/shared';
 import { buildIntroMessage } from '../services/intro-message.js';
 import { safeRedirectTarget } from '../lib/safe-redirect.js';
 import type { Env } from '../index.js';
@@ -56,13 +61,13 @@ async function linkIgIgsid(
       linked = row?.ig_igsid === igParam;
     }
   } catch (err) {
-    console.error('Failed to write friends.ig_igsid:', err);
+    console.error('Failed to write friends.ig_igsid:', redactForLog(err));
     return;
   }
 
   if (!linked) {
     console.warn(
-      `Skipping IG Harness notify: friend ${friendId} is already linked to a different IGSID`,
+      `Skipping IG Harness notify: friend ${maskFriendId(friendId)} is already linked to a different IGSID`,
     );
     return;
   }
@@ -82,11 +87,11 @@ async function linkIgIgsid(
             console.error(
               'IG Harness link-line failed:',
               res.status,
-              await res.text().catch(() => ''),
+              sanitizeLogMessage(await res.text().catch(() => '')),
             );
           }
         })
-        .catch((err) => console.error('IG Harness link-line error:', err)),
+        .catch((err) => console.error('IG Harness link-line error:', redactForLog(err))),
     );
   }
 }
@@ -280,12 +285,15 @@ async function applyRefAttribution(
           try {
             await addTagToFriend(db, friend.id, firstStep.on_reach_tag_id);
           } catch (err) {
-            console.error(`[scenario] tag attach failed step=${firstStep.id}:`, err);
+            console.error(
+              `[scenario] tag attach failed step=${firstStep.id}:`,
+              redactForLog(err),
+            );
           }
         }
       }
     } catch (err) {
-      console.error('Ref scenario enrollment error:', err);
+      console.error('Ref scenario enrollment error:', redactForLog(err));
     }
   }
 }
@@ -664,7 +672,7 @@ liffRoutes.get('/auth/callback', async (c) => {
 
     if (!tokenRes.ok) {
       const errText = await tokenRes.text();
-      console.error('Token exchange failed:', errText);
+      console.error('Token exchange failed:', sanitizeLogMessage(errText));
       return c.html(errorPage('Token exchange failed'));
     }
 
@@ -832,14 +840,14 @@ liffRoutes.get('/auth/callback', async (c) => {
             .prepare('UPDATE friends SET metadata = ?, updated_at = ? WHERE id = ?')
             .bind(JSON.stringify(meta), jstNow(), friend.id)
             .run();
-          console.log(`X Harness: linked @${xhResult.xUsername} to friend ${friend.id}`);
+          console.log(`X Harness: linked account to friend ${maskFriendId(friend.id)}`);
         }
         // Apply gate actions (tag + scenario) from X Harness
         if (xhResult) {
           await applyXHarnessActions(db, friend.id, xhResult);
         }
       } catch (err) {
-        console.error('X Harness token resolution error (non-blocking):', err);
+        console.error('X Harness token resolution error (non-blocking):', redactForLog(err));
       }
     }
 
@@ -930,7 +938,10 @@ liffRoutes.get('/auth/callback', async (c) => {
                   try {
                     await addTagLiff(db, friend.id, firstStep.on_reach_tag_id);
                   } catch (err) {
-                    console.error(`[scenario] tag attach failed step=${firstStep.id}:`, err);
+                    console.error(
+                      `[scenario] tag attach failed step=${firstStep.id}:`,
+                      redactForLog(err),
+                    );
                   }
                 }
               }
@@ -939,7 +950,7 @@ liffRoutes.get('/auth/callback', async (c) => {
         }
       }
     } catch (err) {
-      console.error('OAuth scenario enrollment error:', err);
+      console.error('OAuth scenario enrollment error:', redactForLog(err));
     }
 
     // Redirect or show completion. Guard against open-redirect abuse: external
@@ -999,7 +1010,10 @@ liffRoutes.get('/auth/callback', async (c) => {
               const { setFriendFirstTrackedLinkIfNull } = await import('@line-crm/db');
               await setFriendFirstTrackedLinkIfNull(db, friend.id, trackedLink.id);
             } catch (e) {
-              console.error('setFriendFirstTrackedLinkIfNull failed (non-blocking):', e);
+              console.error(
+                'setFriendFirstTrackedLinkIfNull failed (non-blocking):',
+                redactForLog(e),
+              );
             }
             if (trackedLink.intro_template_id) {
               introTemplate = await getMessageTemplateById(db, trackedLink.intro_template_id);
@@ -1011,7 +1025,7 @@ liffRoutes.get('/auth/callback', async (c) => {
         const lineClient = new LineClient(accessToken);
         await lineClient.pushMessage(friend.line_user_id, [introMessage as any]);
       } catch (err) {
-        console.error('Form link push error (non-blocking):', err);
+        console.error('Form link push error (non-blocking):', redactForLog(err));
       }
     }
 
@@ -1053,7 +1067,7 @@ liffRoutes.get('/auth/callback', async (c) => {
     return c.html(completionPage(displayName, pictureUrl, ref));
 
   } catch (err) {
-    console.error('Auth callback error:', err);
+    console.error('Auth callback error:', redactForLog(err));
     return c.html(errorPage('Internal error'));
   }
 });
@@ -1097,7 +1111,7 @@ liffRoutes.get('/api/liff/config', async (c) => {
       data: { botBasicId, accountName, accountId },
     });
   } catch (err) {
-    console.error('GET /api/liff/config error:', err);
+    console.error('GET /api/liff/config error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -1127,7 +1141,7 @@ liffRoutes.post('/api/liff/profile', async (c) => {
       },
     });
   } catch (err) {
-    console.error('POST /api/liff/profile error:', err);
+    console.error('POST /api/liff/profile error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -1226,13 +1240,13 @@ liffRoutes.post('/api/liff/link', async (c) => {
               .prepare('UPDATE friends SET metadata = ? WHERE id = ?')
               .bind(JSON.stringify(meta), friend.id)
               .run();
-            console.log(`X Harness: linked @${xhResult.xUsername} to friend ${friend.id}`);
+            console.log(`X Harness: linked account to friend ${maskFriendId(friend.id)}`);
           }
           if (xhResult) {
             await applyXHarnessActions(db, friend.id, xhResult);
           }
         } catch (err) {
-          console.error('X Harness token resolution error (non-blocking):', err);
+          console.error('X Harness token resolution error (non-blocking):', redactForLog(err));
         }
       }
       return c.json({
@@ -1294,13 +1308,13 @@ liffRoutes.post('/api/liff/link', async (c) => {
             .prepare('UPDATE friends SET metadata = ? WHERE id = ?')
             .bind(JSON.stringify(meta), friend.id)
             .run();
-          console.log(`X Harness: linked @${xhResult.xUsername} to friend ${friend.id}`);
+          console.log(`X Harness: linked account to friend ${maskFriendId(friend.id)}`);
         }
         if (xhResult) {
           await applyXHarnessActions(db, friend.id, xhResult);
         }
       } catch (err) {
-        console.error('X Harness token resolution error (non-blocking):', err);
+        console.error('X Harness token resolution error (non-blocking):', redactForLog(err));
       }
     }
 
@@ -1309,7 +1323,7 @@ liffRoutes.post('/api/liff/link', async (c) => {
       data: { userId, alreadyLinked: false },
     });
   } catch (err) {
-    console.error('POST /api/liff/link error:', err);
+    console.error('POST /api/liff/link error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -1384,7 +1398,7 @@ liffRoutes.get('/api/analytics/ref-summary', async (c) => {
       },
     });
   } catch (err) {
-    console.error('GET /api/analytics/ref-summary error:', err);
+    console.error('GET /api/analytics/ref-summary error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -1444,7 +1458,7 @@ liffRoutes.get('/api/analytics/ref/:refCode', async (c) => {
       },
     });
   } catch (err) {
-    console.error('GET /api/analytics/ref/:refCode error:', err);
+    console.error('GET /api/analytics/ref/:refCode error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -1470,7 +1484,7 @@ liffRoutes.post('/api/links/wrap', async (c) => {
     const wrappedUrl = `${liffUrl}?${params.toString()}`;
     return c.json({ success: true, data: { url: wrappedUrl } });
   } catch (err) {
-    console.error('POST /api/links/wrap error:', err);
+    console.error('POST /api/links/wrap error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -1645,10 +1659,12 @@ async function applyXHarnessActions(
       if (tagRow) {
         const { addTagToFriend } = await import('@line-crm/db');
         await addTagToFriend(db, friendId, tagRow.id);
-        console.log(`X Harness: added tag "${result.tag}" to friend ${friendId}`);
+        console.log(
+          `X Harness: added tag "${result.tag}" to friend ${maskFriendId(friendId)}`,
+        );
       }
     } catch (err) {
-      console.error(`X Harness: failed to add tag "${result.tag}":`, err);
+      console.error(`X Harness: failed to add tag "${result.tag}":`, redactForLog(err));
     }
   }
 
@@ -1657,9 +1673,11 @@ async function applyXHarnessActions(
     try {
       const { enrollFriendInScenario } = await import('@line-crm/db');
       await enrollFriendInScenario(db, friendId, result.scenarioId);
-      console.log(`X Harness: enrolled friend ${friendId} in scenario ${result.scenarioId}`);
+      console.log(
+        `X Harness: enrolled friend ${maskFriendId(friendId)} in scenario ${result.scenarioId}`,
+      );
     } catch (err) {
-      console.error(`X Harness: failed to enroll in scenario:`, err);
+      console.error('X Harness: failed to enroll in scenario:', redactForLog(err));
     }
   }
 }
@@ -1803,7 +1821,10 @@ liffRoutes.post('/api/liff/send-form-link', async (c) => {
           const { setFriendFirstTrackedLinkIfNull } = await import('@line-crm/db');
           await setFriendFirstTrackedLinkIfNull(c.env.DB, friend.id, trackedLink.id);
         } catch (e) {
-          console.error('setFriendFirstTrackedLinkIfNull failed (non-blocking):', e);
+          console.error(
+            'setFriendFirstTrackedLinkIfNull failed (non-blocking):',
+            redactForLog(e),
+          );
         }
       }
       if (trackedLink?.intro_template_id) {
@@ -1817,7 +1838,7 @@ liffRoutes.post('/api/liff/send-form-link', async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    console.error('POST /api/liff/send-form-link error:', err);
+    console.error('POST /api/liff/send-form-link error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
