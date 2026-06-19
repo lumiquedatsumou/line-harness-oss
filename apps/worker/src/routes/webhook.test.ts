@@ -46,7 +46,7 @@ vi.mock('../services/step-delivery.js', () => ({
   expandVariables: vi.fn(),
 }));
 
-import { verifySignature } from '@line-crm/line-sdk';
+import { verifySignature, LineClient } from '@line-crm/line-sdk';
 import {
   addTagToFriend,
   advanceFriendScenario,
@@ -295,5 +295,154 @@ describe('POST /webhook — first-contact existing friends', () => {
     expect(addTagToFriend).not.toHaveBeenCalled();
     expect(getEntryRouteByRefCode).not.toHaveBeenCalled();
     expect(getMessageTemplateById).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /webhook — signature gating & multi-account resolution', () => {
+  const VALID_SHAPED_SIG = 'A'.repeat(43) + '='; // 44-char base64 (HMAC-SHA256 length)
+
+  function freshCtx(): ExecutionContext {
+    return {
+      waitUntil: vi.fn(),
+      passThroughOnException: vi.fn(),
+      props: {},
+    } as unknown as ExecutionContext;
+  }
+
+  function post(body: string, ctx: ExecutionContext, headers: Record<string, string> = {}) {
+    return setupApp().request(
+      '/webhook',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body,
+      },
+      baseEnv,
+      ctx,
+    );
+  }
+
+  // (#1, #5) Valid env-secret signature clears verification and enters async processing.
+  test('valid env-secret signature enters async processing', async () => {
+    vi.mocked(verifySignature).mockResolvedValue(true);
+    const ctx = freshCtx();
+    const body = JSON.stringify({ destination: 'bot', events: [] });
+
+    const res = await post(body, ctx, { 'X-Line-Signature': VALID_SHAPED_SIG });
+
+    expect(res.status).toBe(200);
+    expect(verifySignature).toHaveBeenCalledWith('env-default-secret', body, VALID_SHAPED_SIG);
+    // waitUntil is only reached AFTER the signature gate — proves processing started.
+    expect(ctx.waitUntil).toHaveBeenCalled();
+  });
+
+  // (#2, #4) 44-char but invalid signature with well-formed JSON: HTTP 200, but no downstream work.
+  test('invalid signature with well-formed JSON returns 200 without starting processing', async () => {
+    vi.mocked(verifySignature).mockResolvedValue(false); // env + (empty) D1 both fail
+    const ctx = freshCtx();
+    const body = JSON.stringify({
+      destination: 'bot',
+      events: [
+        {
+          type: 'follow',
+          replyToken: 'reply-token',
+          timestamp: 1,
+          source: { type: 'user', userId: 'U-attacker' },
+          mode: 'active',
+        },
+      ],
+    });
+
+    const res = await post(body, ctx, { 'X-Line-Signature': VALID_SHAPED_SIG });
+
+    expect(res.status).toBe(200); // by design: 200 to avoid LINE retries / info leak
+    expect(verifySignature).toHaveBeenCalled();
+    // The gate held: no async processing, no event handling, even with a valid-looking event.
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(fireEvent).not.toHaveBeenCalled();
+    expect(upsertFriend).not.toHaveBeenCalled();
+  });
+
+  // (#3) Missing signature header is fast-rejected before any crypto or D1 access.
+  test('missing signature header skips verifySignature and the D1 account lookup', async () => {
+    const ctx = freshCtx();
+    const body = JSON.stringify({ destination: 'bot', events: [] });
+
+    const res = await post(body, ctx); // no X-Line-Signature
+
+    expect(res.status).toBe(200);
+    expect(verifySignature).not.toHaveBeenCalled();
+    expect(getLineAccounts).not.toHaveBeenCalled();
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+  });
+
+  // (#8) Even malformed JSON is signature-verified first; parse failure returns 200 safely.
+  test('valid signature + malformed JSON verifies first, then returns 200 without processing', async () => {
+    vi.mocked(verifySignature).mockResolvedValue(true);
+    const ctx = freshCtx();
+    const body = '{not valid json';
+
+    const res = await post(body, ctx, { 'X-Line-Signature': VALID_SHAPED_SIG });
+
+    expect(res.status).toBe(200);
+    expect(verifySignature).toHaveBeenCalledWith('env-default-secret', body, VALID_SHAPED_SIG);
+    // Parse failure is caught before processing — no async work started, no crash.
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+  });
+
+  // (#6) env secret fails → an ACTIVE line_accounts secret matches → that account's token is used.
+  test('falls back to an active line_accounts secret when env secret does not match', async () => {
+    vi.mocked(verifySignature).mockImplementation(
+      async (secret: string) => secret === 'db-account-secret',
+    );
+    vi.mocked(getLineAccounts).mockResolvedValue([
+      {
+        id: 'acc-db',
+        is_active: 1,
+        channel_secret: 'db-account-secret',
+        channel_access_token: 'db-account-token',
+      },
+    ] as never);
+    const ctx = freshCtx();
+    const body = JSON.stringify({ destination: 'bot', events: [] });
+
+    const res = await post(body, ctx, { 'X-Line-Signature': VALID_SHAPED_SIG });
+
+    expect(res.status).toBe(200);
+    expect(verifySignature).toHaveBeenCalledWith('env-default-secret', body, VALID_SHAPED_SIG);
+    expect(verifySignature).toHaveBeenCalledWith('db-account-secret', body, VALID_SHAPED_SIG);
+    // downstream LINE client is built with the MATCHED account's access token, not the env one.
+    expect(LineClient).toHaveBeenCalledWith('db-account-token');
+    expect(ctx.waitUntil).toHaveBeenCalled();
+  });
+
+  // (#7) Inactive line_accounts must never be used as a verification candidate.
+  test('inactive line_accounts are skipped during signature verification', async () => {
+    vi.mocked(verifySignature).mockImplementation(
+      async (secret: string) => secret === 'inactive-secret',
+    );
+    vi.mocked(getLineAccounts).mockResolvedValue([
+      {
+        id: 'acc-inactive',
+        is_active: 0,
+        channel_secret: 'inactive-secret',
+        channel_access_token: 'inactive-token',
+      },
+    ] as never);
+    const ctx = freshCtx();
+    const body = JSON.stringify({ destination: 'bot', events: [] });
+
+    const res = await post(body, ctx, { 'X-Line-Signature': VALID_SHAPED_SIG });
+
+    expect(res.status).toBe(200);
+    // The inactive account's secret must never be handed to verifySignature.
+    expect(verifySignature).not.toHaveBeenCalledWith(
+      'inactive-secret',
+      expect.anything(),
+      expect.anything(),
+    );
+    // Verification ultimately failed → no processing, no LINE client.
+    expect(ctx.waitUntil).not.toHaveBeenCalled();
+    expect(LineClient).not.toHaveBeenCalled();
   });
 });
