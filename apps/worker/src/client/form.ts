@@ -738,7 +738,6 @@ async function submitForm(): Promise<void> {
 
   try {
     const data = collectFormData();
-    console.log('Form data collected:', JSON.stringify(data));
 
     // Webhook gate — pre-verified by /repliers endpoint
     if (state.formDef.onSubmitWebhookUrl) {
