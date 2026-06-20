@@ -15,6 +15,7 @@
     "deploy:setup": "node packages/create-line-harness/dist/index.js",
     "deploy:update": "node packages/create-line-harness/dist/index.js update",
     "test:scripts": "vitest run --config vitest.config.ts",
+    "lint:logs": "node scripts/check-redacted-logs.mjs",
     "build:bundle": "tsx scripts/release/build-bundle.ts"
   },
   "packageManager": "pnpm@9.15.4",
