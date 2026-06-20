@@ -68,7 +68,7 @@ broadcasts.get('/api/broadcasts', async (c) => {
     const items = await getBroadcasts(c.env.DB, lineAccountId || undefined);
     return c.json({ success: true, data: items.map(serializeBroadcast) });
   } catch (err) {
-    console.error('GET /api/broadcasts error:', err);
+    console.error('GET /api/broadcasts error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -85,7 +85,7 @@ broadcasts.get('/api/broadcasts/:id', async (c) => {
 
     return c.json({ success: true, data: serializeBroadcast(broadcast) });
   } catch (err) {
-    console.error('GET /api/broadcasts/:id error:', err);
+    console.error('GET /api/broadcasts/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -151,7 +151,7 @@ broadcasts.get('/api/broadcasts/:id/preview-count', async (c) => {
 
     return c.json({ success: true, data: { count, perAccount } });
   } catch (err) {
-    console.error('GET /api/broadcasts/:id/preview-count error:', err);
+    console.error('GET /api/broadcasts/:id/preview-count error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -236,7 +236,10 @@ broadcasts.get('/api/broadcasts/:id/per-account-stats', async (c) => {
               uniqueClick: (overview.uniqueClick as number) ?? null,
             });
           } catch (err) {
-            console.error(`[per-account-stats] account ${aid} insight failed:`, err);
+            console.error(
+              `[per-account-stats] account ${aid} insight failed:`,
+              redactForLog(err),
+            );
           }
         }),
       );
@@ -252,7 +255,10 @@ broadcasts.get('/api/broadcasts/:id/per-account-stats', async (c) => {
 
     return c.json({ success: true, data: result });
   } catch (err) {
-    console.error('GET /api/broadcasts/:id/per-account-stats error:', err);
+    console.error(
+      'GET /api/broadcasts/:id/per-account-stats error:',
+      redactForLog(err),
+    );
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -323,7 +329,7 @@ broadcasts.post('/api/broadcasts', async (c) => {
 
     return c.json({ success: true, data: serializeBroadcast(broadcast) }, 201);
   } catch (err) {
-    console.error('POST /api/broadcasts error:', err);
+    console.error('POST /api/broadcasts error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -399,7 +405,7 @@ broadcasts.put('/api/broadcasts/:id', async (c) => {
 
     return c.json({ success: true, data: updated ? serializeBroadcast(updated) : null });
   } catch (err) {
-    console.error('PUT /api/broadcasts/:id error:', err);
+    console.error('PUT /api/broadcasts/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -411,7 +417,7 @@ broadcasts.delete('/api/broadcasts/:id', async (c) => {
     await deleteBroadcast(c.env.DB, id);
     return c.json({ success: true, data: null });
   } catch (err) {
-    console.error('DELETE /api/broadcasts/:id error:', err);
+    console.error('DELETE /api/broadcasts/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -478,12 +484,18 @@ broadcasts.post('/api/broadcasts/:id/send', async (c) => {
         const defaultClient = new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN);
         ctx.waitUntil(
           processQueuedBroadcasts(c.env.DB, defaultClient, c.env.WORKER_URL).catch((err) => {
-            console.error('[multi-account-dedup] background queue processing failed:', err);
+            console.error(
+              '[multi-account-dedup] background queue processing failed:',
+              redactForLog(err),
+            );
           }),
         );
       } catch (kickErr) {
         // ExecutionContext 未利用環境 (test 等) — cron 経由にフォールバック
-        console.warn('[multi-account-dedup] waitUntil unavailable, falling back to cron:', kickErr);
+        console.warn(
+          '[multi-account-dedup] waitUntil unavailable, falling back to cron:',
+          redactForLog(kickErr),
+        );
       }
 
       return c.json({
@@ -563,7 +575,7 @@ broadcasts.post('/api/broadcasts/:id/send', async (c) => {
     const result = await getBroadcastById(c.env.DB, id);
     return c.json({ success: true, data: result ? serializeBroadcast(result) : null });
   } catch (err) {
-    console.error('POST /api/broadcasts/:id/send error:', err);
+    console.error('POST /api/broadcasts/:id/send error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -598,7 +610,7 @@ broadcasts.post('/api/broadcasts/:id/send-segment', async (c) => {
     const result = await getBroadcastById(c.env.DB, id);
     return c.json({ success: true, data: result ? serializeBroadcast(result) : null, queued: true, message: 'Broadcast queued for batch processing by Cron' }, 202);
   } catch (err) {
-    console.error('POST /api/broadcasts/:id/send-segment error:', err);
+    console.error('POST /api/broadcasts/:id/send-segment error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -630,7 +642,7 @@ broadcasts.get('/api/broadcasts/:id/insight', async (c) => {
       },
     });
   } catch (err) {
-    console.error('GET /api/broadcasts/:id/insight error:', err);
+    console.error('GET /api/broadcasts/:id/insight error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -720,7 +732,10 @@ broadcasts.post('/api/broadcasts/:id/fetch-insight', async (c) => {
           aggMedia += (overview.uniqueMediaPlayed as number) ?? 0;
           if (messages && messages.length > 0) hasAnyData = true;
         } catch (err) {
-          console.error(`[fetch-insight] dedup account ${aid} failed:`, err);
+          console.error(
+            `[fetch-insight] dedup account ${aid} failed:`,
+            redactForLog(err),
+          );
           responses.push({ accountId: aid, data: { error: String(err) } });
         }
       }
@@ -795,7 +810,7 @@ broadcasts.post('/api/broadcasts/:id/fetch-insight', async (c) => {
       data: { delivered, uniqueImpression, uniqueClick, uniqueMediaPlayed, openRate, clickRate },
     });
   } catch (err) {
-    console.error('POST /api/broadcasts/:id/fetch-insight error:', err);
+    console.error('POST /api/broadcasts/:id/fetch-insight error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -866,7 +881,7 @@ broadcasts.post('/api/broadcasts/:id/test-send', async (c) => {
 
     return c.json({ success: true, sent, failed });
   } catch (err) {
-    console.error('POST /api/broadcasts/:id/test-send error:', err);
+    console.error('POST /api/broadcasts/:id/test-send error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -908,7 +923,7 @@ broadcasts.post('/api/segments/count', async (c) => {
 
     return c.json({ success: true, count: result?.count ?? 0 });
   } catch (err) {
-    console.error('POST /api/segments/count error:', err);
+    console.error('POST /api/segments/count error:', redactForLog(err));
     return c.json({ success: false, error: 'Invalid segment conditions' }, 400);
   }
 });

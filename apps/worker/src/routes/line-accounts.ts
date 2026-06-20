@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { LineClient } from '@line-crm/line-sdk';
+import { redactForLog } from '@line-crm/shared';
 import {
   getLineAccounts,
   getLineAccountById,
@@ -103,7 +104,7 @@ lineAccounts.get('/api/line-accounts', async (c) => {
     );
     return c.json({ success: true, data: results });
   } catch (err) {
-    console.error('GET /api/line-accounts error:', err);
+    console.error('GET /api/line-accounts error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -121,7 +122,7 @@ lineAccounts.get('/api/line-accounts/:id', async (c) => {
       : serializeLineAccountFull(account);
     return c.json({ success: true, data });
   } catch (err) {
-    console.error('GET /api/line-accounts/:id error:', err);
+    console.error('GET /api/line-accounts/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -153,8 +154,10 @@ lineAccounts.get('/api/line-accounts/:id/follower-insight', async (c) => {
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('GET /api/line-accounts/:id/follower-insight error:', message);
+    console.error(
+      'GET /api/line-accounts/:id/follower-insight error:',
+      redactForLog(err),
+    );
     return c.json({ success: false, error: 'Failed to fetch LINE follower insight' }, 502);
   }
 });
@@ -320,7 +323,10 @@ lineAccounts.post('/api/line-accounts', requireRole('owner'), async (c) => {
         console.log(`[line-accounts] enrolled new account ${account.id} into main pool`);
       }
     } catch (err) {
-      console.error('[line-accounts] failed to auto-enroll into main pool', err);
+      console.error(
+        '[line-accounts] failed to auto-enroll into main pool',
+        redactForLog(err),
+      );
     }
 
     return c.json({ success: true, data: serializeLineAccountFull(account) }, 201);
@@ -332,7 +338,7 @@ lineAccounts.post('/api/line-accounts', requireRole('owner'), async (c) => {
     if (/UNIQUE constraint failed/i.test(message)) {
       return c.json({ success: false, error: 'channelId already registered' }, 409);
     }
-    console.error('POST /api/line-accounts error:', err);
+    console.error('POST /api/line-accounts error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -371,7 +377,7 @@ lineAccounts.patch(
       await updateLineAccountOrder(c.env.DB, body.ordered);
       return c.json({ success: true });
     } catch (err) {
-      console.error('PATCH /api/line-accounts/order error:', err);
+      console.error('PATCH /api/line-accounts/order error:', redactForLog(err));
       return c.json({ success: false, error: 'Internal server error' }, 500);
     }
   },
@@ -475,7 +481,7 @@ lineAccounts.patch(
       if (!updated) return c.json({ success: false, error: 'LINE account not found' }, 404);
       return c.json({ success: true, data: serializeLineAccount(updated) });
     } catch (err) {
-      console.error('PATCH /api/line-accounts/:id error:', err);
+      console.error('PATCH /api/line-accounts/:id error:', redactForLog(err));
       return c.json({ success: false, error: 'Internal server error' }, 500);
     }
   },
@@ -573,7 +579,7 @@ lineAccounts.put('/api/line-accounts/:id', requireRole('owner'), async (c) => {
 
     return c.json({ success: true, data: serializeLineAccountFull(updated) });
   } catch (err) {
-    console.error('PUT /api/line-accounts/:id error:', err);
+    console.error('PUT /api/line-accounts/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -584,7 +590,7 @@ lineAccounts.delete('/api/line-accounts/:id', requireRole('owner'), async (c) =>
     await deleteLineAccount(c.env.DB, c.req.param('id')!);
     return c.json({ success: true, data: null });
   } catch (err) {
-    console.error('DELETE /api/line-accounts/:id error:', err);
+    console.error('DELETE /api/line-accounts/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });

@@ -11,6 +11,7 @@ import {
   updateOutgoingWebhook,
   deleteOutgoingWebhook,
 } from '@line-crm/db';
+import { redactForLog } from '@line-crm/shared';
 import type { Env } from '../index.js';
 
 const webhooks = new Hono<Env>();
@@ -83,7 +84,7 @@ webhooks.get('/api/webhooks/incoming', async (c) => {
       })),
     });
   } catch (err) {
-    console.error('GET /api/webhooks/incoming error:', err);
+    console.error('GET /api/webhooks/incoming error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -120,7 +121,7 @@ webhooks.post('/api/webhooks/incoming', async (c) => {
       201,
     );
   } catch (err) {
-    console.error('POST /api/webhooks/incoming error:', err);
+    console.error('POST /api/webhooks/incoming error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -169,7 +170,7 @@ webhooks.put('/api/webhooks/incoming/:id', async (c) => {
       },
     });
   } catch (err) {
-    console.error('PUT /api/webhooks/incoming/:id error:', err);
+    console.error('PUT /api/webhooks/incoming/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -179,7 +180,7 @@ webhooks.delete('/api/webhooks/incoming/:id', async (c) => {
     await deleteIncomingWebhook(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
   } catch (err) {
-    console.error('DELETE /api/webhooks/incoming/:id error:', err);
+    console.error('DELETE /api/webhooks/incoming/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -203,7 +204,7 @@ webhooks.get('/api/webhooks/outgoing', async (c) => {
       })),
     });
   } catch (err) {
-    console.error('GET /api/webhooks/outgoing error:', err);
+    console.error('GET /api/webhooks/outgoing error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -250,7 +251,7 @@ webhooks.post('/api/webhooks/outgoing', async (c) => {
       201,
     );
   } catch (err) {
-    console.error('POST /api/webhooks/outgoing error:', err);
+    console.error('POST /api/webhooks/outgoing error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -321,7 +322,7 @@ webhooks.put('/api/webhooks/outgoing/:id', async (c) => {
       },
     });
   } catch (err) {
-    console.error('PUT /api/webhooks/outgoing/:id error:', err);
+    console.error('PUT /api/webhooks/outgoing/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -331,7 +332,7 @@ webhooks.delete('/api/webhooks/outgoing/:id', async (c) => {
     await deleteOutgoingWebhook(c.env.DB, c.req.param('id'));
     return c.json({ success: true, data: null });
   } catch (err) {
-    console.error('DELETE /api/webhooks/outgoing/:id error:', err);
+    console.error('DELETE /api/webhooks/outgoing/:id error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -376,7 +377,7 @@ webhooks.post('/api/webhooks/incoming/:id/receive', async (c) => {
 
     return c.json({ success: true, data: { received: true, source: wh.source_type } });
   } catch (err) {
-    console.error('POST /api/webhooks/incoming/:id/receive error:', err);
+    console.error('POST /api/webhooks/incoming/:id/receive error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
