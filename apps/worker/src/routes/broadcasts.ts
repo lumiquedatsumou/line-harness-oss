@@ -8,6 +8,7 @@ import {
 } from '@line-crm/db';
 import type { Broadcast as DbBroadcast, BroadcastMessageType, BroadcastTargetType } from '@line-crm/db';
 import { LineClient } from '@line-crm/line-sdk';
+import { maskFriendId, redactForLog } from '@line-crm/shared';
 import { processBroadcastSend, buildMessage, processQueuedBroadcasts } from '../services/broadcast.js';
 import { computeDedupBroadcastPreview } from '../services/dedup-broadcast.js';
 import { processSegmentSend } from '../services/segment-send.js';
@@ -858,7 +859,7 @@ broadcasts.post('/api/broadcasts/:id/test-send', async (c) => {
            VALUES (?, ?, 'outgoing', ?, ?, NULL, 'test', 'broadcast', ?)`
         ).bind(crypto.randomUUID(), friend.id, broadcast.message_type, messageContent, now).run();
       } catch (err) {
-        console.error(`Test send to ${friend.id} failed:`, err);
+        console.error(`Test send to ${maskFriendId(friend.id)} failed:`, redactForLog(err));
         failed++;
       }
     }
