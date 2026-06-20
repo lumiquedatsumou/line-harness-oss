@@ -10,6 +10,7 @@ on:
       - 'packages/update-engine/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/worker-ci.yml'
+      - 'scripts/check-redacted-logs.mjs'
   push:
     branches: [main]
     paths:
@@ -20,6 +21,7 @@ on:
       - 'packages/update-engine/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/worker-ci.yml'
+      - 'scripts/check-redacted-logs.mjs'
   workflow_dispatch:
 
 permissions:
@@ -39,6 +41,9 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      # Staged regression guard: fails if already-redacted files reintroduce raw
+      # error logging. Partial scope by design (see scripts/check-redacted-logs.mjs).
+      - run: pnpm lint:logs
       - run: pnpm --filter @line-crm/shared --filter @line-crm/line-sdk --filter @line-crm/db --filter @line-harness/update-engine build
       - run: pnpm --filter worker typecheck
       - run: pnpm --filter worker test
