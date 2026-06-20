@@ -8,6 +8,8 @@
  * 4. Submit booking → show confirmation
  */
 
+import { redactForLog } from '@line-crm/shared';
+
 declare const liff: {
   init(config: { liffId: string }): Promise<void>;
   isLoggedIn(): boolean;
@@ -374,7 +376,7 @@ async function fetchSlots(date: string): Promise<void> {
     state.slots = json.data;
   } catch (err) {
     state.slots = [];
-    console.error('fetchSlots error:', err);
+    console.error('fetchSlots error:', redactForLog(err));
   } finally {
     state.loading = false;
     render();

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { LineClient } from '@line-crm/line-sdk';
+import { redactForLog } from '@line-crm/shared';
 import {
   getLineAccounts,
   getTrafficPoolBySlug,
@@ -596,7 +597,7 @@ async function scheduled(
   try {
     await processInsightFetch(env.DB, lineClients, defaultLineClient);
   } catch (e) {
-    console.error('Insight fetch error:', e);
+    console.error('Insight fetch error:', redactForLog(e));
   }
 
   // Booking reminders — every 5-minute tick scans due reminders.
@@ -610,7 +611,7 @@ async function scheduled(
       console.log(`[booking-reminders] sent=${result.sent} failed=${result.failed}`);
     }
   } catch (e) {
-    console.error('booking-reminders error:', e);
+    console.error('booking-reminders error:', redactForLog(e));
   }
 
   // Booking expirer — runs only on the 6h cron tick.
@@ -624,7 +625,7 @@ async function scheduled(
         `[booking-expirer] expired=${result.expired} idempotency_purged=${result.idempotencyPurged}`,
       );
     } catch (e) {
-      console.error('booking-expirer error:', e);
+      console.error('booking-expirer error:', redactForLog(e));
     }
   }
 
@@ -638,7 +639,7 @@ async function scheduled(
       console.log(`[event-booking-reminders] sent=${result.sent} failed=${result.failed}`);
     }
   } catch (e) {
-    console.error('event-booking-reminders error:', e);
+    console.error('event-booking-reminders error:', redactForLog(e));
   }
 
   // Event-booking expirer — 6h cron tick.
@@ -649,7 +650,7 @@ async function scheduled(
         `[event-booking-expirer] expired=${result.expired} idempotency_purged=${result.idempotencyPurged}`,
       );
     } catch (e) {
-      console.error('event-booking-expirer error:', e);
+      console.error('event-booking-expirer error:', redactForLog(e));
     }
   }
 

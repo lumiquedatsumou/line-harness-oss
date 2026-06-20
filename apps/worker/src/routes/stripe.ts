@@ -5,6 +5,7 @@ import {
   createStripeEvent,
   jstNow,
 } from '@line-crm/db';
+import { redactForLog } from '@line-crm/shared';
 import type { Env } from '../index.js';
 
 const stripe = new Hono<Env>();
@@ -46,7 +47,7 @@ stripe.get('/api/integrations/stripe/events', async (c) => {
       })),
     });
   } catch (err) {
-    console.error('GET /api/integrations/stripe/events error:', err);
+    console.error('GET /api/integrations/stripe/events error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
@@ -167,7 +168,7 @@ stripe.post('/api/integrations/stripe/webhook', async (c) => {
       data: { id: event.id, stripeEventId: event.stripe_event_id, eventType: event.event_type, processedAt: event.processed_at },
     });
   } catch (err) {
-    console.error('POST /api/integrations/stripe/webhook error:', err);
+    console.error('POST /api/integrations/stripe/webhook error:', redactForLog(err));
     return c.json({ success: false, error: 'Internal server error' }, 500);
   }
 });
